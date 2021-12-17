@@ -10,11 +10,11 @@ import os
 import random
 import time
 import requests
-from scapy.layers.inet import TCP
-from scapy.all import sniff
-from scapy_http import http
+import configparser
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.edge.options import Options
+from selenium.webdriver.common.by import By
+from browsermobproxy import Server
 from PyQt5.QtWidgets import QFileDialog, QMainWindow, QApplication
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -22,7 +22,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class Ui_XiMaDownloader(object):
     def setupUi(self, XiMaDownloader):
         XiMaDownloader.setObjectName("XiMaDownloader")
-        XiMaDownloader.resize(600, 563)
+        XiMaDownloader.resize(600, 593)
         self.centralwidget = QtWidgets.QWidget(XiMaDownloader)
         self.centralwidget.setObjectName("centralwidget")
         self.title_label = QtWidgets.QLabel(self.centralwidget)
@@ -64,6 +64,12 @@ class Ui_XiMaDownloader(object):
         self.token_input_line = QtWidgets.QLineEdit(self.centralwidget)
         self.token_input_line.setGeometry(QtCore.QRect(200, 260, 361, 20))
         self.token_input_line.setObjectName("token_input_line")
+        self.start_label = QtWidgets.QLabel(self.centralwidget)
+        self.start_label.setGeometry(QtCore.QRect(20, 280, 161, 41))
+        self.start_label.setObjectName("start_label")
+        self.start_input_line = QtWidgets.QLineEdit(self.centralwidget)
+        self.start_input_line.setGeometry(QtCore.QRect(200, 290, 50, 20))
+        self.start_input_line.setObjectName("start_input_line")
         self.d_type_box = QtWidgets.QGroupBox(self.centralwidget)
         self.d_type_box.setGeometry(QtCore.QRect(10, 120, 581, 51))
         self.d_type_box.setObjectName("d_type_box")
@@ -74,19 +80,19 @@ class Ui_XiMaDownloader(object):
         self.path_label.setGeometry(QtCore.QRect(20, 220, 171, 41))
         self.path_label.setObjectName("path_label")
         self.d_config_box = QtWidgets.QGroupBox(self.centralwidget)
-        self.d_config_box.setGeometry(QtCore.QRect(10, 180, 581, 111))
+        self.d_config_box.setGeometry(QtCore.QRect(10, 180, 581, 141))
         self.d_config_box.setObjectName("d_config_box")
         self.choose_file_button = QtWidgets.QPushButton(self.d_config_box)
         self.choose_file_button.setGeometry(QtCore.QRect(340, 50, 75, 23))
         self.choose_file_button.setObjectName("choose_file_button")
         self.run_button = QtWidgets.QPushButton(self.centralwidget)
-        self.run_button.setGeometry(QtCore.QRect(510, 320, 75, 23))
+        self.run_button.setGeometry(QtCore.QRect(510, 350, 75, 23))
         self.run_button.setObjectName("run_button")
         self.cancel_button = QtWidgets.QPushButton(self.centralwidget)
-        self.cancel_button.setGeometry(QtCore.QRect(510, 360, 75, 23))
+        self.cancel_button.setGeometry(QtCore.QRect(510, 390, 75, 23))
         self.cancel_button.setObjectName("cancel_button")
         self.output_text = QtWidgets.QTextBrowser(self.centralwidget)
-        self.output_text.setGeometry(QtCore.QRect(10, 300, 491, 241))
+        self.output_text.setGeometry(QtCore.QRect(10, 330, 491, 241))
         self.output_text.setObjectName("output_text")
         self.d_config_box.raise_()
         self.d_type_box.raise_()
@@ -100,6 +106,8 @@ class Ui_XiMaDownloader(object):
         self.id_input_line.raise_()
         self.token_label.raise_()
         self.token_input_line.raise_()
+        self.start_label.raise_()
+        self.start_input_line.raise_()
         self.path_input_line.raise_()
         self.path_label.raise_()
         self.run_button.raise_()
@@ -124,13 +132,13 @@ class Ui_XiMaDownloader(object):
         self.single_fm.setText(_translate("XiMaDownloader", "单个音频"))
         self.id_label.setText(_translate("XiMaDownloader", "<html><head/><body><p><span style=\" font-size:10pt;\">请输入需要下载的音频ID：</span></p></body></html>"))
         self.token_label.setText(_translate("XiMaDownloader", "<html><head/><body><p><span style=\" font-size:10pt;\">请输入你的会员token：</span></p></body></html>"))
+        self.start_label.setText(_translate("XiMaDownloader", "<html><head/><body><p><span style=\" font-size:10pt;\">请输入开始下载集数：</span></p></body></html>"))
         self.d_type_box.setTitle(_translate("XiMaDownloader", "下载类型"))
         self.path_label.setText(_translate("XiMaDownloader", "<html><head/><body><p><span style=\" font-size:10pt;\">请输入保存文件的路径：</span></p></body></html>"))
         self.d_config_box.setTitle(_translate("XiMaDownloader", "下载配置"))
         self.choose_file_button.setText(_translate("XiMaDownloader", "选择文件夹"))
         self.run_button.setText(_translate("XiMaDownloader", "运行"))
         self.cancel_button.setText(_translate("XiMaDownloader", "取消"))
-
 
 class XiMaControl(QMainWindow, Ui_XiMaDownloader):
     def __init__(self):
@@ -143,6 +151,37 @@ class XiMaControl(QMainWindow, Ui_XiMaDownloader):
         self.run_button.clicked.connect(self.run)
         self.info = 0
         self.ximamain = XiMaMain()
+
+        try:
+            dirname, filename = os.path.split(os.path.abspath(__file__))
+            configParser = configparser.ConfigParser()
+            configParser.read(dirname + "/config.ini")
+
+            val = configParser.get("default", "xm_id")
+            self.id_input_line.setText(val)
+
+            val = configParser.get("default", "folder_path")
+            self.path_input_line.setText(val)
+
+            val = configParser.get("default", "token")
+            self.token_input_line.setText(val)
+
+            if configParser.has_option("default", "start") is True:
+                val = configParser.get("default", "start")
+                self.start_input_line.setText(val)
+            else:
+                self.start_input_line.setText('0')
+
+            val = configParser.get("default", "info")
+            self.info = int(val)
+            if self.info == 1:
+                self.free_fm.setChecked(True)
+            elif self.info == 2:
+                self.vip_fm.setChecked(True)
+            elif self.info == 3:
+                self.single_fm.setChecked(True)
+        except Exception as e:
+            print(e)
 
     def open_folder(self):
         # 选取文件
@@ -168,16 +207,37 @@ class XiMaControl(QMainWindow, Ui_XiMaDownloader):
             xm_id = self.id_input_line.text()
             folder_path = self.path_input_line.text()
             token = self.token_input_line.text()
-            # message = str(self.info) + xm_id + folder_path + token
-            # print_text(message)
-            if self.info == 1:
-                self.ximamain.get_free_fm(xm_id, folder_path)
-            elif self.info == 2:
-                self.ximamain.get_pay_fm(xm_id, folder_path, token)
-            elif self.info == 3:
-                print_text(xm_id)
-            else:
-                pass
+            start = self.start_input_line.text()
+
+            try:
+                dirname, filename = os.path.split(os.path.abspath(__file__))
+                configParser = configparser.ConfigParser()
+                configParser.add_section("default")
+                configParser.set("default", "xm_id", xm_id)
+                configParser.set("default", "folder_path", folder_path)
+                configParser.set("default", "token", token)
+                configParser.set("default", "start", start)
+                configParser.set("default", "info", str(self.info))
+                with open(dirname + "/config.ini", "w+") as f:
+                    configParser.write(f)
+            except Exception as e:
+                print(e)
+
+            startIndex = int(start)
+            ids = xm_id.split()
+            for id in ids:
+                # message = str(self.info) + id + folder_path + token
+                # print_text(message)
+                if self.info == 1:
+                    self.ximamain.get_free_fm(id, folder_path, startIndex)
+                elif self.info == 2:
+                    self.ximamain.get_pay_fm(id, folder_path, token, startIndex)
+                elif self.info == 3:
+                    print_text(id)
+                else:
+                    pass
+
+                time.sleep(random.randint(10, 20))
         except Exception as e:
             print(e)
 
@@ -225,13 +285,27 @@ class XiMa:
             str(round(random.random() * 100))) + servertime + "({})".format(str(round(random.random() * 100))) + nowtime
         self.header["xm-sign"] = sign
 
+    def toValidName(self, name):
+        name = name.replace('\\', '')
+        name = name.replace('/', '')
+        name = name.replace(':', '')
+        name = name.replace('*', '')
+        name = name.replace('?', '')
+        name = name.replace('"', '')
+        name = name.replace('<', '')
+        name = name.replace('>', '')
+        name = name.replace('|', '')
+        return name
+
+
     def make_dir(self, xm_fm_id, path):
         """
         保存路径，请自行修改，这里是以有声书ID作为文件夹的路径
         """
-        fm_path = path + '\\' + xm_fm_id
+        name = self.toValidName(xm_fm_id)
+        fm_path = path + '\\' + name
         if str(path).endswith('\\'):
-            fm_path = path + xm_fm_id
+            fm_path = path + name
         f = os.path.exists(fm_path)
         if not f:
             os.makedirs(fm_path)
@@ -252,7 +326,7 @@ class XiMa:
         fm_page_size = r_fm_json['data']['tracksInfo']['pageSize']
         print_text('书名：' + fm_title)
         # 新建有声书ID的文件夹
-        fm_path = self.make_dir(xm_fm_id, path)
+        fm_path = self.make_dir(fm_title, path)
         # 取最大页数，向上取整
         max_page = math.ceil(fm_count/fm_page_size)
         return fm_count, fm_path, max_page
@@ -285,8 +359,13 @@ class XiMa:
         :param src:
         :param path:
         """
+        if(src==None or len(src)==0):
+            print_text(title + '保存失败...')
+            return
+
         r_audio_src = requests.get(src, headers=self.header)
-        m4a_path = path + '\\' + title + '.m4a'
+        name = self.toValidName(title)
+        m4a_path = path + '\\' + name + '.m4a'
         if not os.path.exists(m4a_path):
             with open(m4a_path, 'wb') as f:
                 f.write(r_audio_src.content)
@@ -294,46 +373,94 @@ class XiMa:
         else:
             print_text(title + '.m4a 已存在')
 
-
 class XiMaMain:
     def __init__(self):
         self.xmd = XiMa()
 
-    def get_free_fm(self, xm_fm_id, path):
+        dirname, filename = os.path.split(os.path.abspath(__file__))
+        self.server = Server(dirname + '/browsermob-proxy/bin/browsermob-proxy.bat')
+        self.server.start()
+        self.proxy = self.server.create_proxy()
+        print("proxy: " + self.proxy.proxy)
+
+    def __del__(self):
+        self.server.stop()
+
+    def get_free_fm(self, xm_fm_id, path, startIndex):
         fm_count, fm_path, max_page = self.xmd.get_fm(xm_fm_id, path)
         if max_page:
+            index = 1
+            indexFormat = '{0:0' + str(len(str(max_page * 30))) + 'd}'
             for page in range(1, int(max_page) + 1):
                 print_text(str('第' + str(page) + '页'))
                 r = self.xmd.get_free_sign(xm_fm_id, page)
                 r_json = json.loads(r.text)
                 for audio in r_json['data']['tracksAudioPlay']:
+                    if index < startIndex :
+                        index = index + 1
+                        continue
+
                     audio_title = str(audio['trackName']).replace(' ', '')
                     audio_src = audio['src']
-                    self.xmd.save_fm2local(audio_title, audio_src, fm_path)
+                    name = self.xmd.toValidName(audio_title)
+                    m4a_path = fm_path + '\\' + name + '.m4a'
+                    m4a_path2 = fm_path + '\\' + str(index) + '.' + name + '.m4a'
+                    m4a_path3 = fm_path + '\\' + indexFormat.format(index) + '.' + name + '.m4a'
+                    if os.path.exists(m4a_path) or os.path.exists(m4a_path2) or os.path.exists(m4a_path3):
+                        print_text(audio_title + '.m4a 已存在')
+                    else:
+                        audio_title = indexFormat.format(index) + '.' + name
+                        self.xmd.save_fm2local(audio_title, audio_src, fm_path)
+                    index = index + 1
                 # 每爬取1页，30个音频，休眠3秒
                 time.sleep(3)
         else:
             print_text('no max_page')
 
-    def get_pay_fm(self, xm_fm_id, path, token):
+    def get_pay_fm(self, xm_fm_id, path, token, startIndex):
         fm_count, fm_path, max_page = self.xmd.get_fm(xm_fm_id, path)
         if max_page:
             # 这里应该是 fm_count
+            index = 1
+            indexFormat = '{0:0' + str(len(str(max_page * 30))) + 'd}'
             for p in range(1, int(max_page) + 1):
                 r = self.xmd.get_pay_album(xm_fm_id, p)
                 r_json = json.loads(r.text)
                 tracks = r_json['data']['tracks']
+                needSleep = False
                 for i, track in enumerate(tracks):
+                    if index < startIndex :
+                        index = index + 1
+                        continue
+
                     audio_id = track['trackId']
                     audio_title = str(track['title']).replace(' ', '')
                     audio_url = self.xmd.base_url + track['url']
                     print_text(str(audio_title + '' + audio_url))
-                    real_url = self.auto_click(audio_url, token)
-                    self.xmd.save_fm2local(audio_title, real_url, fm_path)
-                    # 每爬取1页，30个音频，休眠1~3秒
+                    name = self.xmd.toValidName(audio_title)
+                    m4a_path = fm_path + '\\' + name + '.m4a'
+                    m4a_path2 = fm_path + '\\' + str(index) + '.' + name + '.m4a'
+                    m4a_path3 = fm_path + '\\' + indexFormat.format(index) + '.' + name + '.m4a'
+                    if os.path.exists(m4a_path) or os.path.exists(m4a_path2) or os.path.exists(m4a_path3):
+                        print_text(audio_title + '.m4a 已存在')
+                    else:
+                        audio_title = indexFormat.format(index) + '.' + name
+                        for k in range(1,3):
+                            try:
+                                real_url = self.auto_click(audio_url, token)
+                                self.xmd.save_fm2local(audio_title, real_url, fm_path)
+                                needSleep = True
+                                break
+                            except Exception as e:
+                                time.sleep(random.randint(10, 20))
+
+                    index = index + 1
+                # 每爬取1页，30个音频，休眠1~3秒
+                if (needSleep):
                     time.sleep(random.randint(1, 3))
         else:
             print_text('no max_page')
+            return True
 
     def auto_click(self, url, token):
         """
@@ -342,10 +469,18 @@ class XiMaMain:
         scapy开始抓点击后音频真实地址的数据包，退出browser，解析包
         注意click与抓包的顺序，先点击再抓包
         """
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--disable-gpu')
-        browser = webdriver.Chrome(chrome_options=chrome_options)
+        webdriver_options = Options()
+        webdriver_options.add_argument('--headless')
+        webdriver_options.add_argument('--disable-gpu')
+        webdriver_options.add_argument('--proxy-server={0}'.format(self.proxy.proxy))
+        webdriver_options.add_argument('--ignore-certificate-errors')
+        webdriver_options.add_argument('--start-maximized')  # 最大化
+        webdriver_options.add_argument('--incognito')  # 无痕隐身模式
+        webdriver_options.add_argument("disable-cache")  # 禁用缓存
+        webdriver_options.add_argument('disable-infobars')
+        webdriver_options.add_argument('log-level=3')
+        webdriver_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        browser = webdriver.Edge(options=webdriver_options)
         browser.get(url)
         browser.add_cookie({
             # 此处xxx.com前，需要带点，注意domain也是cookie必须的
@@ -354,19 +489,21 @@ class XiMaMain:
             'value': token,
         })
         browser.get(url)
-        time.sleep(4)
+        time.sleep(random.randint(4, 10))
+        self.proxy.new_har()
         print_text('开始抓包')
         # selenium 点击播放按钮
-        browser.find_element_by_css_selector(".play-btn.fR_").click()
-        # 下面的iface是电脑网卡的名称 count是捕获报文的数目
-        pkts = sniff(filter="tcp and port 80", iface="Qualcomm Atheros AR956x Wireless Network Adapter", count=5)
+        browser.find_element(By.CSS_SELECTOR, value='.play-btn.U_s').click()
+        time.sleep(random.randint(10, 20))
+        req_url = ""
+        result = self.proxy.har
+        for entry in result['log']['entries']:
+            if '.m4a' in entry['request']['url']:
+                req_url = entry['request']['url']
+                break
         browser.quit()
-        for pkt in pkts:
-            if TCP in pkt and pkt.haslayer(http.HTTPRequest):
-                http_header = pkt[http.HTTPRequest].fields
-                req_url = 'http://' + bytes.decode(http_header['Host']) + bytes.decode(http_header['Path'])
-                return req_url
-
+        print_text('req_url: ' + req_url)
+        return req_url
 
 def print_text(msg):
     control.output_text.append(msg)
